@@ -21,7 +21,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	if queryUrl == nil {
+	if queryUrl == nil || *queryUrl == "" {
 		fmt.Print("The URL is empty \n")
 		os.Exit(0)
 	}
@@ -33,7 +33,8 @@ func main() {
 
 	client, err := zhihu.NewZhihuClient(*u)
 	if err != nil{
-		panic(err)
+		fmt.Printf("%v\n", err)
+		os.Exit(0)
 	}
 
 	if err := client.CreateDirectory(); err != nil {

@@ -150,10 +150,6 @@ func (z Zhihu) Download(u url.URL) error {
 
 	defer res.Body.Close()
 
-	if res.StatusCode != 200 {
-		return errors.New(fmt.Sprintf("status code error: %d %s", res.StatusCode, res.Status))
-	}
-
 	buf, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return err
