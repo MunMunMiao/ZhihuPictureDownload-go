@@ -4,9 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"girls/zhihu"
+	"github.com/gosuri/uiprogress"
 	"math"
 	"net/url"
 	"os"
+	"runtime"
 	"sync"
 )
 
@@ -31,7 +33,7 @@ func main() {
 		panic(err)
 	}
 
-	client, err := zhihu.NewZhihuClient(*u)
+	client, err := zhihu.NewClient(*u)
 	if err != nil{
 		fmt.Printf("%v\n", err)
 		os.Exit(0)
@@ -44,6 +46,7 @@ func main() {
 	imagesArr := make([]url.URL, 0)
 	var page uint64 = 1
 
+	fmt.Print("Parsing...\n")
 	for {
 		data, err := client.Query(page)
 		if err != nil {
@@ -69,24 +72,35 @@ func main() {
 
 		allPageSize := uint64(math.Ceil(float64(*count) / 20))
 		if page >= allPageSize {
-			fmt.Printf("%v pages in total, searched: %v pages, found: %v photos\n", allPageSize, page, len(imagesArr))
 			break
 		} else {
 			page += 1
 		}
 	}
 
+	imagesArr = client.RemoveDuplicate(imagesArr)
+	fmt.Printf("searched: %v pages, found: %v photos\n", page, len(imagesArr))
+
 	if saveImage != nil && *saveImage == true{
+		runtime.GOMAXPROCS(runtime.NumCPU())
+
+		bar := uiprogress.AddBar(len(imagesArr)).AppendCompleted().PrependElapsed()
+		bar.PrependFunc(func(b *uiprogress.Bar) string {
+			return fmt.Sprintf("Saving (%d/%d)", b.Current(), len(imagesArr))
+		})
+		uiprogress.Start()
+
 		miao := make(chan url.URL, 0)
 		wg := sync.WaitGroup{}
 
-		for i := 0; i < 5; i++ {
+		for i := 0; i < runtime.NumCPU(); i++ {
 			go func(ch chan url.URL) {
 				for s := range ch {
 					if err := client.Download(s); err != nil {
 						fmt.Printf("%v\n", err)
 					}
 					wg.Done()
+					bar.Incr()
 				}
 			}(miao)
 		}
@@ -97,9 +111,11 @@ func main() {
 		}
 
 		wg.Wait()
+		uiprogress.Stop()
 	}else {
 		if err := client.OutputTextFile(imagesArr); err != nil {
 			fmt.Printf("%v\n", err)
 		}
 	}
+
 }

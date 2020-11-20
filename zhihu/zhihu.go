@@ -15,10 +15,12 @@ import (
 	"strings"
 )
 
-type Zhihu struct {
+type Client struct {
 	urlToken string
 	output   string
 }
+
+const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.67 Safari/537.36"
 
 type OriginData struct {
 	InitialState struct {
@@ -34,8 +36,12 @@ type OriginData struct {
 	} `json:"initialState"`
 }
 
-func NewZhihuClient(u url.URL) (*Zhihu, error) {
-	res, err := http.Get(u.String())
+func NewClient(u url.URL) (*Client, error) {
+	req, _ := http.NewRequest("GET", u.String(), nil)
+	req.Header.Set("user-agent", userAgent)
+
+	httpClient := &http.Client{}
+	res, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +49,7 @@ func NewZhihuClient(u url.URL) (*Zhihu, error) {
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, errors.New(fmt.Sprintf("status code error: %d %s", res.StatusCode, res.Status))
+		return nil, errors.New(fmt.Sprintf("status code error: %d\n%s\n", res.StatusCode, res.Status))
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
@@ -60,9 +66,9 @@ func NewZhihuClient(u url.URL) (*Zhihu, error) {
 	for key := range json_data.InitialState.Entities.Users {
 		token := json_data.InitialState.Entities.Users[key].UrlToken
 		if token != nil {
-			return &Zhihu{
+			return &Client{
 				urlToken: *token,
-				output: "./output",
+				output:   "./output",
 			}, nil
 		}
 	}
@@ -70,17 +76,21 @@ func NewZhihuClient(u url.URL) (*Zhihu, error) {
 	return nil, errors.New("UrlToken not found\n")
 }
 
-func (z Zhihu) Query(page uint64) (*OriginData, error) {
+func (c Client) Query(page uint64) (*OriginData, error) {
 	httpUrl := url.URL{
 		Scheme: "https",
-		Host: "www.zhihu.com",
-		Path: fmt.Sprintf("/people/%v/answers", z.urlToken),
+		Host:   "www.zhihu.com",
+		Path:   fmt.Sprintf("/people/%v/answers", c.urlToken),
 	}
 	queryValue := httpUrl.Query()
 	queryValue.Set("page", strconv.FormatUint(page, 10))
 	httpUrl.RawQuery = queryValue.Encode()
 
-	res, err := http.Get(httpUrl.String())
+	req, _ := http.NewRequest("GET", httpUrl.String(), nil)
+	req.Header.Set("user-agent", userAgent)
+
+	httpClient := &http.Client{}
+	res, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +115,7 @@ func (z Zhihu) Query(page uint64) (*OriginData, error) {
 	}
 }
 
-func (z Zhihu) GetImages(data OriginData) ([]url.URL, error) {
+func (c Client) GetImages(data OriginData) ([]url.URL, error) {
 	imageArr := make([]url.URL, 0)
 
 	for key := range data.InitialState.Entities.Answers {
@@ -129,11 +139,10 @@ func (z Zhihu) GetImages(data OriginData) ([]url.URL, error) {
 			}
 		})
 	}
-
-	return z.removeDuplicate(imageArr), nil
+	return imageArr, nil
 }
 
-func (z Zhihu) GetAllAnswerCount(data OriginData) *uint64 {
+func (c Client) GetAllAnswerCount(data OriginData) *uint64 {
 	var count *uint64
 	for key := range data.InitialState.Entities.Users {
 		count = data.InitialState.Entities.Users[key].AnswerCount
@@ -142,7 +151,7 @@ func (z Zhihu) GetAllAnswerCount(data OriginData) *uint64 {
 	return count
 }
 
-func (z Zhihu) Download(u url.URL) error {
+func (c Client) Download(u url.URL) error {
 	res, err := http.Get(u.String())
 	if err != nil {
 		return err
@@ -164,26 +173,26 @@ func (z Zhihu) Download(u url.URL) error {
 		return errors.New("Incomplete data\n")
 	}
 
-	fullPath, err := z.getFullDirectory()
-	if err != nil{
+	fullPath, err := c.getFullDirectory()
+	if err != nil {
 		return err
 	}
 	return ioutil.WriteFile(filepath.Join(*fullPath, u.Path), buf, os.ModeAppend)
 }
 
-func (z Zhihu) getFullDirectory() (*string, error) {
+func (c Client) getFullDirectory() (*string, error) {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 
-	path := filepath.Join(pwd, "output", z.urlToken)
+	path := filepath.Join(pwd, "output", c.urlToken)
 	return &path, nil
 }
 
-func (z Zhihu) CreateDirectory() error {
-	fullPath, err := z.getFullDirectory()
-	if err != nil{
+func (c Client) CreateDirectory() error {
+	fullPath, err := c.getFullDirectory()
+	if err != nil {
 		return err
 	}
 
@@ -196,7 +205,7 @@ func (z Zhihu) CreateDirectory() error {
 	return os.MkdirAll(*fullPath, os.ModePerm)
 }
 
-func (z Zhihu) removeDuplicate(input []url.URL) []url.URL {
+func (c Client) RemoveDuplicate(input []url.URL) []url.URL {
 	result := make([]url.URL, 0)
 	temp := map[string]url.URL{}
 
@@ -210,16 +219,16 @@ func (z Zhihu) removeDuplicate(input []url.URL) []url.URL {
 	return result
 }
 
-func (z Zhihu) OutputTextFile(images []url.URL) error {
+func (c Client) OutputTextFile(images []url.URL) error {
 	str := ""
 
-	for _, item := range images{
+	for _, item := range images {
 		str += fmt.Sprintf("%v\n", item.String())
 	}
 
-	fullPath, err := z.getFullDirectory()
-	if err != nil{
+	fullPath, err := c.getFullDirectory()
+	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filepath.Join(*fullPath, "list.txt"), []byte(str), os.ModeAppend)
+	return ioutil.WriteFile(filepath.Join(*fullPath, "list.txt"), []byte(str), os.ModePerm)
 }
