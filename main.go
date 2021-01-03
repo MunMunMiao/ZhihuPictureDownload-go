@@ -3,13 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"girls/zhihu"
 	"github.com/gosuri/uiprogress"
 	"math"
 	"net/url"
 	"os"
 	"runtime"
 	"sync"
+	"zhihu/client"
 )
 
 var queryUrl *string
@@ -33,7 +33,7 @@ func main() {
 		panic(err)
 	}
 
-	client, err := zhihu.NewClient(*u)
+	client, err := client.NewClient(*u)
 	if err != nil{
 		fmt.Printf("%v\n", err)
 		os.Exit(0)
